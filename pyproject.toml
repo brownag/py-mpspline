@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpspline"
+version = "0.1.0"
+description = "Mass-preserving equal-area quadratic splines for depth harmonization of soil component profiles"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Andrew Brown", email = "brown.andrewg@gmail.com"},
+    {name = "Lauren O'Brien"},
+]
+
+keywords = [
+    "soil",
+    "pedology",
+    "splines",
+    "depth-harmonization",
+    "globalsoilmap",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+    "scipy>=1.7.0",
+]
+
+[project.optional-dependencies]
+spc = [
+    "soilprofilecollection>=0.3.0",
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+    "soilprofilecollection>=0.3.0",
+]
+
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/brownag/mpspline"
+Repository = "https://github.com/brownag/mpspline"
+Documentation = "https://py-mpspline.readthedocs.io"
+"Bug Tracker" = "https://github.com/brownag/mpspline/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages]
+find = {where = ["src"]}
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --cov=mpspline --cov-report=html --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/mpspline"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "C4",
+    "T20",
+]
+ignore = [
+    "E501",  # Line too long (covered by black)
+    "N806",  # Variable in function should be lowercase (mathematical matrices are uppercase by convention)
+    "B905",  # zip without strict parameter (minor issue, not critical)
+]

@@ -23,10 +23,6 @@ result = mpspline({
     ]
 })
 print(result)  # {'clay_0_5': 21.4, 'clay_5_15': 27.8, ...}
-
-# Multiple profiles
-profiles = [...]
-df = mpspline(profiles)  # Returns DataFrame
 ```
 
 ## Usage

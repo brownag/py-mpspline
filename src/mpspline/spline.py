@@ -216,7 +216,9 @@ def mpspline_one(
     vlow: float = 0.0,
     vhigh: float = 1000.0,
     strict: bool = False,
-) -> dict:
+    output_type: str = "long",
+    mode: str = "dcm",
+) -> dict | list[dict]:
     """
     Harmonize a single component's horizons to standard depths.
 
@@ -230,6 +232,8 @@ def mpspline_one(
         lam: Smoothing parameter (default 0.1).
         vlow, vhigh: Prediction constraints.
         strict: If True, raise on validation errors.
+        output_type: 'long' (default) or 'wide'.
+        mode: 'dcm' (standard depths, default), '1cm', or 'icm'.
     """
     if target_depths is None:
         target_depths = GLOBALSM_DEPTHS
@@ -252,7 +256,11 @@ def mpspline_one(
         if strict:
             raise
         logger.warning(f"Horizon sequence error: {e}")
-        return deepcopy(component_data)  # Return original data on error
+        if output_type == "long":
+            return []
+        # Return deepcopy of dict
+        result_dict: dict = deepcopy(component_data)
+        return result_dict
 
     # Determine which properties to spline
     if var_name is None:
@@ -269,16 +277,22 @@ def mpspline_one(
         if strict:
             raise
         logger.warning(f"Failed to convert horizons to DataFrame: {e}")
-        return deepcopy(component_data)
+        if output_type == "long":
+            return []
+        # Return deepcopy of dict
+        result_dict = deepcopy(component_data)
+        return result_dict
 
-    # Start with component metadata
-    result = {
-        k: v
-        for k, v in component_data.items()
-        if k != "horizons"  # Exclude horizons from output
-    }
+    # Extract metadata (everything except horizons)
+    metadata = {k: v for k, v in component_data.items() if k != "horizons"}
 
-    # Process each property with the mpspline2 algorithm
+    # Container for long format results
+    long_results = []
+
+    # Container for wide format results (start with metadata)
+    wide_result = deepcopy(metadata)
+
+    # Process each property
     for property_name in properties_to_process:
         try:
             spline_result = spline_one(
@@ -290,16 +304,51 @@ def mpspline_one(
                 vhigh=vhigh,
             )
 
-            # Add splined values to result with proper naming
-            names_dcm: list[str] = spline_result["names_dcm"]  # type: ignore
-            est_dcm: np.ndarray = spline_result["est_dcm"]  # type: ignore
-            for depth_name, value in zip(names_dcm, est_dcm):
-                # Convert "000_005_cm" to "clay_0_5"
-                parts = depth_name.rstrip("_cm").split("_")
-                depth_top = int(parts[0].lstrip("0") or "0")
-                depth_bottom = int(parts[1].lstrip("0") or "0")
-                key = f"{property_name}_{depth_top}_{depth_bottom}"
-                result[key] = float(value) if not np.isnan(value) else np.nan
+            if output_type == "wide":
+                # Wide format only supports dcm mode effectively
+                names_dcm_wide: list[str] = spline_result["names_dcm"]  # type: ignore
+                est_dcm_wide: np.ndarray = spline_result["est_dcm"]  # type: ignore
+                for depth_name, value in zip(names_dcm_wide, est_dcm_wide):
+                    parts = depth_name.rstrip("_cm").split("_")
+                    depth_top = int(parts[0].lstrip("0") or "0")
+                    depth_bottom = int(parts[1].lstrip("0") or "0")
+                    key = f"{property_name}_{depth_top}_{depth_bottom}"
+                    wide_result[key] = float(value) if not np.isnan(value) else np.nan
+
+            else:  # output_type == "long"
+                if mode == "dcm":
+                    names_dcm_long: list[str] = spline_result["names_dcm"]  # type: ignore
+                    est_dcm_long: np.ndarray = spline_result["est_dcm"]  # type: ignore
+                    for depth_name, value in zip(names_dcm_long, est_dcm_long):
+                        parts = depth_name.rstrip("_cm").split("_")
+                        record = deepcopy(metadata)
+                        record["var_name"] = property_name
+                        record["upper"] = int(parts[0].lstrip("0") or "0")
+                        record["lower"] = int(parts[1].lstrip("0") or "0")
+                        record["value"] = float(value) if not np.isnan(value) else np.nan
+                        long_results.append(record)
+
+                elif mode == "1cm":
+                    est_1cm: np.ndarray = spline_result["est_1cm"]  # type: ignore
+                    for depth, value in enumerate(est_1cm):
+                        record = deepcopy(metadata)
+                        record["var_name"] = property_name
+                        record["depth"] = depth
+                        record["value"] = float(value) if not np.isnan(value) else np.nan
+                        long_results.append(record)
+
+                elif mode == "icm":
+                    est_icm: np.ndarray = spline_result["est_icm"]  # type: ignore
+                    depths_top: np.ndarray = spline_result["depths_top"]  # type: ignore
+                    depths_bottom: np.ndarray = spline_result["depths_bottom"]  # type: ignore
+
+                    for i, value in enumerate(est_icm):
+                        record = deepcopy(metadata)
+                        record["var_name"] = property_name
+                        record["upper"] = float(depths_top[i])
+                        record["lower"] = float(depths_bottom[i])
+                        record["value"] = float(value) if not np.isnan(value) else np.nan
+                        long_results.append(record)
 
         except Exception as e:
             if strict:
@@ -309,7 +358,9 @@ def mpspline_one(
                 f"in component {component_data.get('cokey', 'unknown')}: {e}"
             )
 
-    return result
+    if output_type == "long":
+        return long_results
+    return wide_result
 
 
 def mpspline(
@@ -323,6 +374,8 @@ def mpspline(
     parallel: bool = False,
     n_workers: int | None = None,
     strict: bool = False,
+    output_type: str = "long",
+    mode: str = "dcm",
 ) -> dict | pd.DataFrame:
     """
     Harmonize one or more soil components to standard depths.
@@ -337,6 +390,8 @@ def mpspline(
         parallel: Use multiprocessing for bulk processing.
         n_workers: Number of worker processes. Default: CPU count.
         strict: If True, raise on errors; else skip problematic components.
+        output_type: 'long' (default) or 'wide'.
+        mode: 'dcm' (standard depths, default), '1cm', or 'icm'.
 
     Returns:
         Dict or DataFrame of harmonized data.
@@ -354,6 +409,8 @@ def mpspline(
             vlow=vlow,
             vhigh=vhigh,
             strict=strict,
+            output_type=output_type,
+            mode=mode,
         )
 
     # Assume list of dicts for bulk processing
@@ -369,7 +426,7 @@ def mpspline(
 
     # Process components
     if parallel:
-        harmonized = _process_parallel(
+        harmonized_batches = _process_parallel(
             components=components,
             var_name=var_name,
             target_depths=target_depths,
@@ -378,9 +435,11 @@ def mpspline(
             vhigh=vhigh,
             n_workers=n_workers,
             strict=strict,
+            output_type=output_type,
+            mode=mode,
         )
     else:
-        harmonized = _process_sequential(
+        harmonized_batches = _process_sequential(
             components=components,
             var_name=var_name,
             target_depths=target_depths,
@@ -388,15 +447,25 @@ def mpspline(
             vlow=vlow,
             vhigh=vhigh,
             strict=strict,
+            output_type=output_type,
+            mode=mode,
         )
 
     # Convert to DataFrame
-    if not harmonized:
+    if not harmonized_batches:
         logger.warning("No components were successfully harmonized")
         return pd.DataFrame()
 
-    df = pd.DataFrame(harmonized)
-    logger.info(f"Successfully harmonized {len(df)} components")
+    # Aggregate results
+    if output_type == "long":
+        # Flatten list of lists
+        flat_results = [item for sublist in harmonized_batches for item in sublist]
+        df = pd.DataFrame(flat_results)
+    else:
+        # Wide format: list of dicts
+        df = pd.DataFrame(harmonized_batches)
+
+    logger.info(f"Successfully harmonized {len(df)} records")
 
     return df
 
@@ -409,7 +478,9 @@ def _process_sequential(
     vlow: float,
     vhigh: float,
     strict: bool,
-) -> list[dict]:
+    output_type: str,
+    mode: str,
+) -> list:
     """Process components sequentially."""
     harmonized = []
 
@@ -423,6 +494,8 @@ def _process_sequential(
                 vlow=vlow,
                 vhigh=vhigh,
                 strict=strict,
+                output_type=output_type,
+                mode=mode,
             )
             harmonized.append(result)
 
@@ -447,7 +520,9 @@ def _harmonize_worker(
     vlow: float,
     vhigh: float,
     strict: bool,
-) -> dict | None:
+    output_type: str,
+    mode: str,
+) -> dict | list | None:
     """
     Worker function for multiprocessing.
 
@@ -462,6 +537,8 @@ def _harmonize_worker(
             vlow=vlow,
             vhigh=vhigh,
             strict=strict,
+            output_type=output_type,
+            mode=mode,
         )
     except Exception as e:
         if not strict:
@@ -479,7 +556,9 @@ def _process_parallel(
     vhigh: float,
     n_workers: int | None,
     strict: bool,
-) -> list[dict]:
+    output_type: str,
+    mode: str,
+) -> list:
     """Process components using multiprocessing."""
     from functools import partial
 
@@ -494,6 +573,8 @@ def _process_parallel(
         vlow=vlow,
         vhigh=vhigh,
         strict=strict,
+        output_type=output_type,
+        mode=mode,
     )
 
     with Pool(processes=n_workers) as pool:

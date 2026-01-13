@@ -71,15 +71,13 @@ The algorithm has three main steps:
 Implementation Details
 ----------------------
 
-This implementation strictly adheres to the mathematical derivation presented in **Appendix A** of Malone et al. (2009), ensuring accurate reproduction of the roughness penalty matrix :math:`\mathbf{R}`.
-
-Specifically, the diagonal elements of the :math:`\mathbf{R}` matrix are constructed as:
+The roughness penalty matrix :math:`\mathbf{R}` is constructed with diagonal elements:
 
 .. math::
 
     R_{ii} = 2(h_i + h_{i+1}) + 6g_i
 
-Where :math:`h_i` is the thickness of layer :math:`i` and :math:`g_i` is the gap between layers. This formulation is numerically consistent with the reference `mpspline2` R package.
+Where :math:`h_i` is the thickness of layer :math:`i` and :math:`g_i` is the gap between layers.
 
 Key Properties
 --------------

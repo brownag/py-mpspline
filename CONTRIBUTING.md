@@ -228,4 +228,4 @@ def test_mpspline_single_profile_returns_dict(miami_soil):
 
 Feel free to open an issue or discussion on [GitHub](https://github.com/brownag/mpspline) if you have questions or need clarification.
 
-Thank you for contributing! 🙏
+Thank you for contributing!

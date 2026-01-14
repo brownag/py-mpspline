@@ -492,15 +492,18 @@ def spline_one(
     predictions = _fit_spline_predictions(params, max_depth, target_depths, vlow=vlow, vhigh=vhigh)
 
     # Calculate error metrics
-    est_at_input: np.ndarray = params["s_bar"]  # type: ignore
-    rmse, rmse_iqr = _calculate_rmse(values, est_at_input)
+    est_icm: np.ndarray = params["s_bar"]  # type: ignore
+    rmse, rmse_iqr = _calculate_rmse(values, est_icm)
 
     return {
+        "est_icm": est_icm,
         "est_dcm": predictions["est_dcm"],
         "names_dcm": predictions["names_dcm"],
         "est_1cm": predictions["est_1cm"],
         "rmse": rmse,
         "rmse_iqr": rmse_iqr,
+        "depths_top": depths_top,
+        "depths_bottom": depths_bottom,
     }
 
 

@@ -21,13 +21,15 @@ result = mpspline({
         {'hzname': 'A', 'upper': 0, 'lower': 20, 'clay': 24.5},
         {'hzname': 'B', 'upper': 20, 'lower': 50, 'clay': 35.2},
     ]
-})
+}, output_type='wide')
 print(result)  # {'clay_0_5': 21.4, 'clay_5_15': 27.8, ...}
 ```
 
 ## Usage
 
-Pass a dict for a single profile or a list for multiple profiles:
+Pass a dict for a single profile or a list for multiple profiles.
+
+### 1. Single Profile (Wide Format)
 
 ```python
 from mpspline import mpspline
@@ -36,13 +38,17 @@ from mpspline import mpspline
 result = mpspline({
     'cokey': 12345,
     'horizons': [
-        {'hzname': 'Ap', 'upper': 0, 'lower': 20, 'clay': 24.5},
-        {'hzname': 'Bt', 'upper': 20, 'lower': 50, 'clay': 35.2},
+        {'hzname': 'A', 'upper': 0, 'lower': 20, 'clay': 24.5},
+        {'hzname': 'B', 'upper': 20, 'lower': 50, 'clay': 35.2},
     ]
-})
-print(result['clay_0_5'])  # 21.4
+}, output_type='wide')
+print(result)
+# {'cokey': 12345, 'clay_0_5': 22.6, 'clay_5_15': 24.1, 'clay_15_30': 29.9, ...}
+```
 
-# Multiple profiles (returns DataFrame)
+### 2. Multiple Profiles (Long Format - Default)
+
+```python
 profiles = [
     {
         'cokey': 1001,
@@ -61,8 +67,50 @@ profiles = [
         ]
     },
 ]
-df = mpspline(profiles, var_name=['clay'], parallel=True)
-print(df[['cokey', 'clay_0_5', 'clay_5_15', 'clay_15_30', 'clay_30_60']])
+
+# Returns DataFrame with columns: [cokey, var_name, upper, lower, value]
+df_long = mpspline(profiles, var_name=['clay'])
+print(df_long[['cokey', 'var_name', 'upper', 'lower', 'value']].head())
+```
+Output:
+```text
+ cokey var_name  upper  lower      value
+  1001     clay      0      5  16.168706
+  1001     clay      5     15  19.762784
+  1001     clay     15     30  31.118765
+  1001     clay     30     60  36.090372
+  1001     clay     60    100  31.251860
+```
+
+### 3. Multiple Profiles (Wide Format)
+
+```python
+# Returns DataFrame with flattened columns: [cokey, clay_0_5, clay_5_15, ...]
+df_wide = mpspline(profiles, var_name=['clay'], output_type='wide')
+print(df_wide[['cokey', 'clay_0_5', 'clay_5_15', 'clay_15_30']].head())
+```
+Output:
+```text
+ cokey  clay_0_5  clay_5_15  clay_15_30
+  1001 16.168706  19.762784   31.118765
+  1002 12.784555  14.721798   22.437913
+```
+
+### 4. Advanced Modes (1cm Resolution)
+
+```python
+# Get high-resolution predictions at every 1cm interval
+df_1cm = mpspline(profiles, var_name=['clay'], mode='1cm')
+print(df_1cm[['cokey', 'var_name', 'depth', 'value']].head())
+```
+Output:
+```text
+ cokey var_name  depth      value
+  1001     clay      0  15.935577
+  1001     clay      1  15.974431
+  1001     clay      2  16.090996
+  1001     clay      3  16.285271
+  1001     clay      4  16.557255
 ```
 
 ## Parameters

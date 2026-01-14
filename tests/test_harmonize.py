@@ -139,7 +139,8 @@ class TestHarmonizeComponentsBulk:
     def test_bulk_batch_processing(self, multiple_components):
         """Verify batching logic in bulk processing."""
         df = mpspline(multiple_components, batch_size=1)
-        assert len(df) > 50
+        # 3 components * 5 vars * 6 depths = 90 rows
+        assert len(df) == 90
 
     def test_bulk_wide_format(self, multiple_components):
         """Verify wide format DataFrame output."""
@@ -184,8 +185,12 @@ class TestModes:
         df = mpspline([{"cokey": 1, "horizons": simple_horizons}], mode="1cm")
         assert "depth" in df.columns
 
-        # 4 properties, max depth 50 -> (50+1) * 4 = 204 records
-        prop_count = 4
+        # Count numeric properties dynamically
+        numeric_props = [
+            k for k, v in simple_horizons[0].items() 
+            if k not in ["hzname", "upper", "lower"] and isinstance(v, (int, float))
+        ]
+        prop_count = len(numeric_props)
         max_depth = int(max(h["lower"] for h in simple_horizons))
         assert len(df) == (max_depth + 1) * prop_count
 

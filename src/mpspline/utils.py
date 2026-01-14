@@ -69,3 +69,32 @@ def parse_depth_key(key: str) -> tuple | None:
         return property_name, depth_top, depth_bottom
     except (ValueError, AttributeError):
         return None
+
+
+def extract_numeric_properties(
+    horizons: list[dict],
+    excluded_keys: set[str] | None = None,
+) -> list[str]:
+    """
+    Extract sorted list of numeric properties from horizon list.
+
+    Helper function to identify all numeric properties in horizon data.
+    Used for detecting properties to process and in testing.
+
+    Args:
+        horizons: List of horizon dicts
+        excluded_keys: Keys to exclude (e.g., {'hzname', 'upper', 'lower'})
+
+    Returns:
+        List of numeric property names sorted alphabetically
+    """
+    if excluded_keys is None:
+        excluded_keys = {"hzname", "upper", "lower"}
+
+    properties = set()
+    for horizon in horizons:
+        for key, value in horizon.items():
+            if key not in excluded_keys and isinstance(value, (int, float)):
+                properties.add(key)
+
+    return sorted(properties)

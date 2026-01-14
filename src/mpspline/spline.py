@@ -222,18 +222,21 @@ def mpspline_one(
     """
     Harmonize a single component's horizons to standard depths.
 
-    Applies mass-preserving quadratic spline interpolation to convert
-    variable-depth horizon data into fixed-depth intervals.
+    Applies mass-preserving quadratic spline interpolation to convert variable-depth
+    horizon data into fixed-depth intervals.
 
     Args:
-        component_data: Component dict with 'horizons' list of dicts.
+        component_data: Component dict with 'horizons' list.
         var_name: Property name(s) to spline. Default: all numeric properties.
-        target_depths: (top, bottom) tuples in cm. Default: GlobalSoilMap depths.
-        lam: Smoothing parameter (default 0.1).
-        vlow, vhigh: Prediction constraints.
-        strict: If True, raise on validation errors.
-        output_type: 'long' (default) or 'wide'.
-        mode: 'dcm' (standard depths, default), '1cm', or 'icm'.
+        target_depths: (top, bottom) tuples in cm. Default: GlobalSoilMap.
+        lam: Smoothing parameter (0.1 default).
+        vlow, vhigh: Min/max prediction constraints.
+        strict: Raise on validation errors (vs skip with warning).
+        output_type: 'long' (list of dicts) or 'wide' (dict with columns).
+        mode: 'dcm' (standard), '1cm' (every 1cm), 'icm' (input intervals).
+
+    Returns:
+        List[dict] if output_type='long', else dict.
     """
     if target_depths is None:
         target_depths = GLOBALSM_DEPTHS
@@ -258,9 +261,7 @@ def mpspline_one(
         logger.warning(f"Horizon sequence error: {e}")
         if output_type == "long":
             return []
-        # Return deepcopy of dict
-        result_dict: dict = deepcopy(component_data)
-        return result_dict
+        return deepcopy(component_data)
 
     # Determine which properties to spline
     if var_name is None:
@@ -279,9 +280,7 @@ def mpspline_one(
         logger.warning(f"Failed to convert horizons to DataFrame: {e}")
         if output_type == "long":
             return []
-        # Return deepcopy of dict
-        result_dict = deepcopy(component_data)
-        return result_dict
+        return deepcopy(component_data)
 
     # Extract metadata (everything except horizons)
     metadata = {k: v for k, v in component_data.items() if k != "horizons"}
@@ -305,15 +304,35 @@ def mpspline_one(
             )
 
             if output_type == "wide":
-                # Wide format only supports dcm mode effectively
-                names_dcm_wide: list[str] = spline_result["names_dcm"]  # type: ignore
-                est_dcm_wide: np.ndarray = spline_result["est_dcm"]  # type: ignore
-                for depth_name, value in zip(names_dcm_wide, est_dcm_wide):
-                    parts = depth_name.rstrip("_cm").split("_")
-                    depth_top = int(parts[0].lstrip("0") or "0")
-                    depth_bottom = int(parts[1].lstrip("0") or "0")
-                    key = f"{property_name}_{depth_top}_{depth_bottom}"
-                    wide_result[key] = float(value) if not np.isnan(value) else np.nan
+                # Wide format: flatten to column names with depth intervals
+                if mode == "dcm":
+                    names_dcm_wide: list[str] = spline_result["names_dcm"]  # type: ignore
+                    est_dcm_wide: np.ndarray = spline_result["est_dcm"]  # type: ignore
+                    for depth_name, value in zip(names_dcm_wide, est_dcm_wide):
+                        parts = depth_name.rstrip("_cm").split("_")
+                        depth_top = int(parts[0].lstrip("0") or "0")
+                        depth_bottom = int(parts[1].lstrip("0") or "0")
+                        key = f"{property_name}_{depth_top}_{depth_bottom}"
+                        wide_result[key] = float(value) if not np.isnan(value) else np.nan
+
+                elif mode == "1cm":
+                    # 1cm mode: one column per cm depth (e.g., clay_0cm, clay_1cm, ...)
+                    est_1cm: np.ndarray = spline_result["est_1cm"]  # type: ignore
+                    for depth, value in enumerate(est_1cm):
+                        key = f"{property_name}_{depth}cm"
+                        wide_result[key] = float(value) if not np.isnan(value) else np.nan
+
+                elif mode == "icm":
+                    # ICM with wide format: create columns per input interval depth
+                    est_icm: np.ndarray = spline_result["est_icm"]  # type: ignore
+                    depths_top: np.ndarray = spline_result["depths_top"]  # type: ignore
+                    depths_bottom: np.ndarray = spline_result["depths_bottom"]  # type: ignore
+
+                    for i, value in enumerate(est_icm):
+                        depth_top = int(depths_top[i])
+                        depth_bottom = int(depths_bottom[i])
+                        key = f"{property_name}_{depth_top}_{depth_bottom}"
+                        wide_result[key] = float(value) if not np.isnan(value) else np.nan
 
             else:  # output_type == "long"
                 if mode == "dcm":
@@ -391,7 +410,12 @@ def mpspline(
         n_workers: Number of worker processes. Default: CPU count.
         strict: If True, raise on errors; else skip problematic components.
         output_type: 'long' (default) or 'wide'.
-        mode: 'dcm' (standard depths, default), '1cm', or 'icm'.
+            - 'long': DataFrame rows (one per depth interval per property)
+            - 'wide': DataFrame columns (flattened, all modes supported)
+        mode: Output depth intervals
+            - 'dcm' (default): Standard GlobalSoilMap depths
+            - '1cm': Every 1cm (note: wide format creates many columns)
+            - 'icm': Input component horizons (original depth intervals)
 
     Returns:
         Dict or DataFrame of harmonized data.

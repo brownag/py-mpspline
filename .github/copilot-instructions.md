@@ -6,6 +6,14 @@
 
 **Core Purpose**: Convert discrete soil property observations at varying depths into standardized depth intervals while preserving mass (integral).
 
+## Critical Guidelines
+
+### Git & Version Control
+
+- **NO remote pushes**: Never push commits to any remote repository. All changes must remain local.
+- **Commits require approval**: Only make git commits with explicit user approval. Ask before committing.
+- **No unicode**: Strictly avoid unicode characters in all code, comments, documentation, and commit messages. Use only ASCII.
+
 ## Architecture
 
 ### Module Structure (src/mpspline/)

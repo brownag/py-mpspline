@@ -20,17 +20,19 @@
 
 ### Data Flow
 
-1. **Input**: Profile dict or list with horizons → `mpspline()` entry point
-2. **Validation**: `HorizonSequence` standardizes keys (`top`→`upper`, `bottom`→`lower`) and validates
+1. **Input**: Profile dict or list with horizons to `mpspline()` entry point
+2. **Validation**: `HorizonSequence` standardizes keys (`top`/`upper`, `bottom`/`lower`) and validates
 3. **Processing**: `spline_one()` fits quadratic splines to horizon data
-4. **Output**: Returns wide format (dict/DataFrame columns) or long format (DataFrame rows)
+4. **Output**: Returns multiple formats
+   - `output_type`: "long" (default, tidy DataFrame format) or "wide" (flat dict/DataFrame columns)
+   - `mode`: "dcm" (standard depths, default), "1cm" (1cm resolution), or "icm" (input intervals)
 
 ### Key Design Decisions
 
-- **Caching in algorithm.py**: `_MATRIX_CACHE` stores spline matrices (Z, R, Q) keyed by `(depths_top, depths_bottom, lam)` to avoid recomputation across profiles—critical for batch processing performance
-- **Parallel processing**: `multiprocessing.Pool` in `spline.py` for bulk harmonization with configurable batch size
+- **Caching**: `_MATRIX_CACHE` stores spline matrices keyed by (depths_top, depths_bottom, lam) to avoid recomputation
+- **Parallel processing**: `multiprocessing.Pool` for bulk harmonization with configurable batch size
 - **Flexible output**: Three formats: wide (dict), long (DataFrame rows), 1cm (high-resolution)
-- **Non-strict validation**: Default behavior skips bad profiles rather than failing—set `strict=True` to raise exceptions
+- **Non-strict validation**: Skips bad profiles by default; set `strict=True` to raise exceptions
 
 ## Development Workflows
 
@@ -60,7 +62,7 @@ make docs               # Build Sphinx HTML in docs/_build/html/
 
 ### Full Pipeline
 ```bash
-make all                # clean → install → lint-fix → test → build
+make all                # clean, install, lint-fix, test, build
 ```
 
 ## Critical Patterns
@@ -90,16 +92,49 @@ make all                # clean → install → lint-fix → test → build
 
 ### Entry Point Patterns
 
-**Single profile (returns dict)**:
+**Single profile with long format (returns list of dicts)**:
 ```python
-result = mpspline(profile, output_type='wide')
-# → {'cokey': 1234, 'clay_0_5': 22.6, 'clay_5_15': 24.1, ...}
+result = mpspline_one(profile, output_type='long')
+# [{'cokey': 1234, 'var_name': 'clay', 'upper': 0, 'lower': 5, 'value': 22.6}, ...]
 ```
 
-**Bulk profiles (returns DataFrame)**:
+**Single profile with wide format (returns dict)**:
 ```python
-df = mpspline(profiles_list, output_type='wide')  # Wide: columns per depth
-df = mpspline(profiles_list, var_name=['clay'])   # Long: rows per depth (default)
+result = mpspline_one(profile, output_type='wide', mode='dcm')
+# {'cokey': 1234, 'clay_0_5': 22.6, 'clay_5_15': 24.1, ...}
+```
+
+**Single profile with wide format (input intervals)**:
+```python
+result = mpspline_one(profile, output_type='wide', mode='icm')
+# {'cokey': 1234, 'clay_0_20': 28.0, 'clay_20_50': 35.2, ...}
+```
+
+**Bulk profiles with long format (default, returns DataFrame)**:
+```python
+df = mpspline(profiles_list)  # Long format (tidy data)
+# Columns: [cokey, var_name, upper, lower, value]
+```
+
+**Bulk profiles with wide format (returns DataFrame)**:
+```python
+df = mpspline(profiles_list, output_type='wide')  # Wide format (spreadsheet-style)
+# Columns: [cokey, clay_0_5, clay_5_15, sand_0_5, ...]
+```
+
+**High-resolution 1cm output**:
+```python
+df = mpspline(profiles_list, mode='1cm')  # Depth every 1cm
+# Long format: [cokey, var_name, depth, value]
+df = mpspline(profiles_list, output_type='wide', mode='1cm')  # 1cm columns
+# Wide format: [cokey, clay_0cm, clay_1cm, clay_2cm, ...]
+```
+
+**Input interval mode (original horizon depths)**:
+```python
+df = mpspline(profiles_list, mode='icm')  # Use original horizon depth intervals
+# Long: [cokey, var_name, upper, lower, value]
+# Wide: [cokey, clay_0_20, clay_20_50, ...] (original depths as columns)
 ```
 
 **Custom depths**:
@@ -135,33 +170,39 @@ df = mpspline(profiles_list, parallel=True, batch_size=500)  # Use multiprocessi
 
 ### Algorithm Caching
 
-When processing many profiles with the **same** `target_depths` and `lam`:
-- Matrix computation (Z, R, Q) is cached and subsequent profiles reuse these matrices
-- Cache size: max 1000 entries; clears when exceeded
-- **Implication**: Batch processing with homogeneous parameters is fast; heterogeneous parameters bust cache
+When processing many profiles with same `target_depths` and `lam`:
+- Matrix computation is cached; subsequent profiles reuse matrices
+- Cache limit: 1000 entries
+- Homogeneous batches are fast; heterogeneous parameters bust cache
 
 ## Testing Patterns
 
 ### Fixtures (conftest.py)
-- `simple_horizons`: 2-horizon reference data
+- `simple_horizons`: 2-horizon reference data (clay, sand, silt, om_r properties)
 - `miami_soil`: Full soil component (5 horizons, multiple properties)
 - `multiple_components`: 3 component variations for bulk tests
 - `invalid_*`: Invalid horizon patterns for error testing
 
 ### Test Organization (test_harmonize.py)
+
+Use dedicated test classes for different aspects:
 ```python
 class TestHarmonizeComponent:
-    def test_simple_component_harmonization(self, simple_horizons):
-        # Verify metadata preservation and output structure
+    """Test mpspline_one() with long format (default)"""
     
-    def test_custom_target_depths(self, simple_horizons):
-        # Verify user-specified depth intervals
+class TestWideFormat:
+    """Test wide format output (backward compatibility)"""
     
-    def test_invalid_horizons_handling(self):
-        # Verify error handling paths
+class TestHarmonizeComponentsBulk:
+    """Test mpspline() for multiple profiles"""
+    
+class TestModes:
+    """Test output modes: dcm, 1cm, icm"""
 ```
 
-**Pattern**: Use fixtures, parameterize with `pytest.mark.parametrize`, assert both data integrity and metadata preservation.
+**Test Utilities**: Use `extract_numeric_properties()` from [utils.py](utils.py) to avoid duplicating property detection logic in tests.
+
+**Pattern**: Use fixtures, validate both data integrity and metadata preservation, use dynamic assertions (avoid hardcoding expected row counts).
 
 ## Configuration & Constants
 
@@ -179,16 +220,17 @@ class TestHarmonizeComponent:
 
 ### Adding a New Property
 1. If it's a standard soil property, add to `STANDARD_SOIL_PROPERTIES` dict in [constants.py](constants.py)
-2. No schema changes needed—properties are auto-detected from input dicts
+2. No schema changes needed. Properties are auto-detected from input dicts
 3. Add test fixtures with the new property to [conftest.py](conftest.py)
 
 ### Extending Output Formats
-- Modify `mpspline()` in [spline.py](spline.py#L200)—look for `if output_type == 'wide':`
-- Consider impact on single vs. bulk processing paths
-- Add tests in [test_harmonize.py](test_harmonize.py) for each output format
+- Modify `mpspline_one()` in [spline.py](spline.py#L220) for single-profile logic
+- Modify `mpspline()` in [spline.py](spline.py#L380) for bulk processing
+- Update output_type and mode handling for all paths
+- Add tests in [test_harmonize.py](test_harmonize.py) for new combinations
 
 ### Optimizing Algorithm Performance
-- **First check**: Algorithm matrix caching in [algorithm.py](algorithm.py#L42)—is cache effective?
+- **First check**: Algorithm matrix caching in [algorithm.py](algorithm.py#L42). Is cache effective?
 - **Profile parallelization**: Tweak `batch_size` in [spline.py](spline.py#L400)
 - **Memory**: Large batches benefit from small `batch_size`; CPU-bound tasks benefit from larger sizes
 
@@ -199,10 +241,10 @@ class TestHarmonizeComponent:
 
 ## Documentation & References
 
-- **Algorithm**: Bishop et al. (1999) — Modelling soil attribute depth functions with equal-area quadratic smoothing splines
+- **Algorithm**: Bishop et al. (1999) - Modelling soil attribute depth functions with equal-area quadratic smoothing splines
 - **Reference R package**: [mpspline2 on CRAN](https://github.com/obrl-soil/mpspline2)
 - **Standard depths**: GlobalSoilMap initiative (0-200 cm intervals)
-- **Docs**: Built with Sphinx → `make docs` → [docs/_build/html/index.html](docs/_build/html/index.html)
+- **Docs**: Built with Sphinx: `make docs` produces [docs/_build/html/index.html](docs/_build/html/index.html)
 
 ## Type Hints & Code Style
 
